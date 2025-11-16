@@ -267,6 +267,69 @@ def main():
         help="Data type for model weights",
     )
 
+    # Feature steering subcommand
+    steer_parser = subparsers.add_parser(
+        "steer", help="Discover and apply feature steering"
+    )
+    steer_parser.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        help="Model architecture (can be inferred from transcoder config)",
+    )
+    steer_parser.add_argument(
+        "-t",
+        "--transcoder_set",
+        required=True,
+        help="HuggingFace repository ID containing transcoders",
+    )
+    steer_parser.add_argument(
+        "--mode",
+        choices=["discover", "contrastive", "auto-steer", "visualize"],
+        required=True,
+        help="Steering mode",
+    )
+    steer_parser.add_argument(
+        "--specification",
+        help="Natural language description for auto-steer mode",
+    )
+    steer_parser.add_argument(
+        "--desired_examples",
+        nargs="+",
+        help="Example prompts exhibiting desired behavior (contrastive mode)",
+    )
+    steer_parser.add_argument(
+        "--undesired_examples",
+        nargs="+",
+        help="Example prompts exhibiting undesired behavior (contrastive mode)",
+    )
+    steer_parser.add_argument(
+        "--prompts",
+        nargs="+",
+        help="Prompts for semantic discovery or testing",
+    )
+    steer_parser.add_argument(
+        "--test_prompt",
+        help="Test prompt to analyze with/without steering",
+    )
+    steer_parser.add_argument(
+        "--n_features",
+        type=int,
+        default=10,
+        help="Number of features to discover",
+    )
+    steer_parser.add_argument(
+        "--dtype",
+        type=str,
+        choices=["float32", "bfloat16", "float16", "fp32", "bf16", "fp16"],
+        default="float32",
+        help="Data type for model weights",
+    )
+    steer_parser.add_argument(
+        "--output",
+        help="Output file for visualization or results",
+    )
+
     args = parser.parse_args()
 
     if args.command == "attribute":
@@ -277,6 +340,8 @@ def main():
         run_discover_saes(args)
     elif args.command == "compare-checkpoints":
         run_compare_checkpoints(args, compare_parser)
+    elif args.command == "steer":
+        run_steering(args, steer_parser)
     elif args.command == "start-server" or args.server:
         run_server(args)
 
@@ -609,6 +674,151 @@ def run_compare_checkpoints(args, parser):
             print(f"     {metric}: {sign}{delta:.3f}")
 
     print(f"\n✅ Full analysis saved to: {output_file}")
+
+
+def run_steering(args, parser):
+    """Run feature steering operations."""
+    import torch
+
+    from circuit_tracer import ReplacementModel
+    from circuit_tracer.steering import FeatureSteering
+    from circuit_tracer.utils.hf_utils import load_transcoder_from_hub
+
+    # Convert dtype
+    dtype = args.dtype
+    dtype_mapping = {
+        "fp32": "float32",
+        "bf16": "bfloat16",
+        "fp16": "float16",
+    }
+    if dtype in dtype_mapping:
+        dtype = dtype_mapping[dtype]
+    dtype = getattr(torch, dtype)
+
+    # Load model and transcoders
+    logging.info(f"Loading transcoders from {args.transcoder_set}")
+    transcoder, config = load_transcoder_from_hub(
+        args.transcoder_set,
+        dtype=dtype,
+    )
+
+    args.model = args.model or config.get("model_name", None)
+    if not args.model:
+        parser.error("--model must be specified when not provided in transcoder config")
+
+    logging.info(f"Loading model {args.model}")
+    model = ReplacementModel.from_pretrained_and_transcoders(
+        args.model, transcoder, dtype=dtype
+    )
+
+    # Initialize steering
+    steering = FeatureSteering(model)
+
+    if args.mode == "discover":
+        # Semantic discovery
+        if not args.prompts:
+            parser.error("--prompts required for discover mode")
+
+        logging.info(f"Discovering features from {len(args.prompts)} prompts...")
+        features = steering.discover_features(
+            description=args.prompts[0],  # Use first prompt as description
+            n_features=args.n_features,
+            reference_prompts=args.prompts,
+        )
+
+        print(f"\n✅ Discovered {len(features)} features:\n")
+        for i, feat in enumerate(features, 1):
+            layer, pos, feat_idx = feat
+            print(f"{i}. Layer {layer}, Position {pos}, Feature {feat_idx}")
+
+        if args.output:
+            import json
+            with open(args.output, "w") as f:
+                json.dump({"features": [list(f) for f in features]}, f, indent=2)
+            print(f"\n✅ Features saved to {args.output}")
+
+    elif args.mode == "contrastive":
+        # Contrastive discovery
+        if not args.desired_examples or not args.undesired_examples:
+            parser.error("Both --desired_examples and --undesired_examples required for contrastive mode")
+
+        logging.info("Running contrastive feature discovery...")
+        logging.info(f"  Desired examples: {len(args.desired_examples)}")
+        logging.info(f"  Undesired examples: {len(args.undesired_examples)}")
+
+        features = steering.discover_features_contrastive(
+            desired_examples=args.desired_examples,
+            undesired_examples=args.undesired_examples,
+            top_k=args.n_features,
+        )
+
+        print(f"\n✅ Discovered {len(features)} differentiating features:\n")
+        for i, (feat, weight) in enumerate(features, 1):
+            layer, pos, feat_idx = feat
+            print(f"{i}. Layer {layer}, Position {pos}, Feature {feat_idx}")
+            print(f"   Suggested weight: {weight:+.3f}")
+
+        # Apply steering if test prompt provided
+        if args.test_prompt:
+            print(f"\n📊 Applying steering to test prompt...")
+            for feat, weight in features:
+                steering.set_feature_weight(feat, weight)
+
+            original, steered = steering.analyze_with_steering(
+                args.test_prompt, verbose=True
+            )
+
+        if args.output:
+            import json
+            with open(args.output, "w") as f:
+                json.dump({
+                    "features": [
+                        {"feature": list(f), "weight": w}
+                        for f, w in features
+                    ]
+                }, f, indent=2)
+            print(f"\n✅ Features saved to {args.output}")
+
+    elif args.mode == "auto-steer":
+        # Auto-steering
+        if not args.specification:
+            parser.error("--specification required for auto-steer mode")
+
+        logging.info(f"Auto-steering: {args.specification}")
+
+        edits = steering.auto_steer(
+            specification=args.specification,
+            reference_prompts=args.prompts,
+            n_features=args.n_features,
+        )
+
+        print(f"\n✅ Auto-steer configured {len(edits)} features")
+
+        # Test if prompt provided
+        if args.test_prompt:
+            print(f"\n📊 Testing on: {args.test_prompt}\n")
+            original, steered = steering.analyze_with_steering(
+                args.test_prompt, verbose=True
+            )
+
+        # Visualize
+        viz = steering.visualize_steering()
+        print("\n" + viz)
+
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(viz)
+            print(f"\n✅ Visualization saved to {args.output}")
+
+    elif args.mode == "visualize":
+        # Just visualize current configuration
+        viz = steering.visualize_steering()
+        print(viz)
+
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(viz)
+            print(f"\n✅ Visualization saved to {args.output}")
 
 
 def run_server(args):
