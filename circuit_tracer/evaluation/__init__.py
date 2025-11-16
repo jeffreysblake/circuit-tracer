@@ -8,6 +8,12 @@ from circuit_tracer.evaluation.metrics import (
     compute_sparsity,
     compute_graph_density,
 )
+from circuit_tracer.evaluation.finetuning import (
+    FineTuneComparator,
+    FineTuningAnalysis,
+    CheckpointComparison,
+    FeatureDrift,
+)
 
 __all__ = [
     "TaskEvaluator",
@@ -18,4 +24,8 @@ __all__ = [
     "compute_pathway_coherence",
     "compute_sparsity",
     "compute_graph_density",
+    "FineTuneComparator",
+    "FineTuningAnalysis",
+    "CheckpointComparison",
+    "FeatureDrift",
 ]

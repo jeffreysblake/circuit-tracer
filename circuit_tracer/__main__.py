@@ -206,12 +206,77 @@ def main():
         help="Display progress information",
     )
 
+    # Discover SAEs subcommand
+    discover_parser = subparsers.add_parser(
+        "discover-saes", help="Discover available SAEs/transcoders for different models"
+    )
+    discover_parser.add_argument(
+        "--model",
+        help="Filter by model name (partial match)",
+    )
+    discover_parser.add_argument(
+        "--hook_type",
+        help="Filter by hook type (e.g., mlp, resid, attn)",
+    )
+
+    # Compare checkpoints subcommand
+    compare_parser = subparsers.add_parser(
+        "compare-checkpoints", help="Compare fine-tuned checkpoints against base model"
+    )
+    compare_parser.add_argument(
+        "--base_model",
+        required=True,
+        help="Base model name (HuggingFace)",
+    )
+    compare_parser.add_argument(
+        "--transcoder_set",
+        required=True,
+        help="Transcoder set (trained on base model)",
+    )
+    compare_parser.add_argument(
+        "--checkpoints",
+        nargs="+",
+        required=True,
+        help="Paths to checkpoint directories",
+    )
+    compare_parser.add_argument(
+        "--task_config",
+        required=True,
+        help="Task configuration YAML file",
+    )
+    compare_parser.add_argument(
+        "--eval_prompts",
+        nargs="+",
+        help="Prompts to evaluate (alternative to --dataset)",
+    )
+    compare_parser.add_argument(
+        "--dataset",
+        help="Path to dataset JSON file",
+    )
+    compare_parser.add_argument(
+        "-o",
+        "--output_dir",
+        required=True,
+        help="Directory to save comparison results",
+    )
+    compare_parser.add_argument(
+        "--dtype",
+        type=str,
+        choices=["float32", "bfloat16", "float16", "fp32", "bf16", "fp16"],
+        default="float32",
+        help="Data type for model weights",
+    )
+
     args = parser.parse_args()
 
     if args.command == "attribute":
         run_attribution(args, attr_parser)
     elif args.command == "evaluate":
         run_evaluation(args, eval_parser)
+    elif args.command == "discover-saes":
+        run_discover_saes(args)
+    elif args.command == "compare-checkpoints":
+        run_compare_checkpoints(args, compare_parser)
     elif args.command == "start-server" or args.server:
         run_server(args)
 
@@ -434,6 +499,116 @@ def run_evaluation(args, parser):
     for metric_name, value in results.aggregate_metrics.items():
         logging.info(f"  {metric_name}: {value:.4f}")
     logging.info("=" * 60)
+
+
+def run_discover_saes(args):
+    """Discover available SAEs/transcoders."""
+    from circuit_tracer.utils.sae_discovery import SAERegistry
+
+    registry = SAERegistry()
+
+    if args.model:
+        results = registry.search_saes(
+            model_name=args.model,
+            hook_type=args.hook_type,
+        )
+
+        if results:
+            print(f"\nFound {len(results)} SAE(s) for model: {args.model}\n")
+            for sae in results:
+                print(f"Name: {sae.name}")
+                print(f"Repo: {sae.repo_id}")
+                print(f"Hook Type: {sae.hook_point_type}")
+                if sae.d_sae:
+                    print(f"Features: {sae.d_sae:,}")
+                print(f"Description: {sae.description}")
+                print()
+        else:
+            print(f"No SAEs found for model: {args.model}")
+    else:
+        registry.print_summary()
+
+
+def run_compare_checkpoints(args, parser):
+    """Compare fine-tuned checkpoints against base model."""
+    import json
+    from pathlib import Path
+
+    import torch
+
+    from circuit_tracer.evaluation import FineTuneComparator, load_task_config
+
+    # Convert dtype
+    dtype = args.dtype
+    dtype_mapping = {
+        "fp32": "float32",
+        "bf16": "bfloat16",
+        "fp16": "float16",
+    }
+    if dtype in dtype_mapping:
+        dtype = dtype_mapping[dtype]
+    dtype = getattr(torch, dtype)
+
+    # Load task config
+    task_config = load_task_config(args.task_config)
+
+    # Get evaluation prompts
+    if args.eval_prompts:
+        prompts = args.eval_prompts
+    elif args.dataset:
+        with open(args.dataset) as f:
+            dataset = json.load(f)
+        prompts = [item["prompt"] for item in dataset]
+    else:
+        parser.error("Must provide --eval_prompts or --dataset")
+
+    logging.info(f"Comparing {len(args.checkpoints)} checkpoints against base model...")
+    logging.info(f"Base model: {args.base_model}")
+    logging.info(f"Transcoders: {args.transcoder_set}")
+
+    # Create comparator
+    comparator = FineTuneComparator(
+        base_model=args.base_model,
+        transcoder_set=args.transcoder_set,
+        task_config=task_config,
+        dtype=dtype,
+    )
+
+    # Run comparison
+    analysis = comparator.compare_checkpoints(
+        checkpoint_paths=args.checkpoints,
+        eval_prompts=prompts,
+    )
+
+    # Save results
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = output_dir / f"checkpoint_comparison_{task_config.task_name}.json"
+
+    comparator.save_analysis(analysis, output_file)
+
+    # Print summary
+    print("\n" + "=" * 70)
+    print("CHECKPOINT COMPARISON SUMMARY")
+    print("=" * 70)
+    print(f"Task: {task_config.task_name}")
+    print(f"Checkpoints analyzed: {analysis.summary['total_checkpoints']}")
+    print(f"\nBest coverage: {analysis.summary['best_coverage_checkpoint']}")
+    print(f"Best coherence: {analysis.summary['best_coherence_checkpoint']}")
+    print(f"Final transcoder validity: {analysis.summary['final_validity']:.2f}")
+    print(f"Validity trend: {analysis.summary['validity_trend']}")
+    print("=" * 70)
+
+    print("\nDetailed results:")
+    for i, ckpt in enumerate(analysis.checkpoints):
+        print(f"\n{i+1}. {ckpt.checkpoint_name}")
+        print(f"   {ckpt.interpretation}")
+        print(f"   Metric changes:")
+        for metric, delta in ckpt.metric_deltas.items():
+            sign = "+" if delta > 0 else ""
+            print(f"     {metric}: {sign}{delta:.3f}")
+
+    print(f"\n✅ Full analysis saved to: {output_file}")
 
 
 def run_server(args):
