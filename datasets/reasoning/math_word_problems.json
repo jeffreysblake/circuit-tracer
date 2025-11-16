@@ -1,0 +1,57 @@
+[
+  {
+    "prompt": "A store has 45 apples. They sell 18 in the morning and 12 in the afternoon. How many apples are left?",
+    "expected_answer": "15",
+    "expected_reasoning_steps": [
+      "Total apples sold = 18 + 12 = 30",
+      "Apples left = 45 - 30 = 15"
+    ],
+    "expected_features": ["numerical_operations", "step_markers", "intermediate_conclusions"],
+    "difficulty": "easy"
+  },
+  {
+    "prompt": "Sarah has 3 times as many books as Tom. Tom has 12 books. How many books do they have together?",
+    "expected_answer": "48",
+    "expected_reasoning_steps": [
+      "Sarah has 3 × 12 = 36 books",
+      "Together they have 36 + 12 = 48 books"
+    ],
+    "expected_features": ["numerical_operations", "step_markers", "intermediate_conclusions"],
+    "difficulty": "easy"
+  },
+  {
+    "prompt": "A train travels 60 miles per hour. How far will it travel in 2.5 hours?",
+    "expected_answer": "150 miles",
+    "expected_reasoning_steps": [
+      "Distance = Speed × Time",
+      "Distance = 60 × 2.5 = 150 miles"
+    ],
+    "expected_features": ["numerical_operations", "problem_decomposition"],
+    "difficulty": "medium"
+  },
+  {
+    "prompt": "If 5 workers can build a wall in 12 days, how many days will it take 3 workers to build the same wall?",
+    "expected_answer": "20 days",
+    "expected_reasoning_steps": [
+      "Total work = 5 workers × 12 days = 60 worker-days",
+      "With 3 workers: 60 worker-days ÷ 3 workers = 20 days"
+    ],
+    "expected_features": ["numerical_operations", "step_markers", "problem_decomposition", "intermediate_conclusions"],
+    "difficulty": "hard"
+  },
+  {
+    "prompt": "A rectangle's length is 5 cm more than its width. If the perimeter is 50 cm, what is the area?",
+    "expected_answer": "150 square cm",
+    "expected_reasoning_steps": [
+      "Let width = w, then length = w + 5",
+      "Perimeter = 2(w + w + 5) = 50",
+      "4w + 10 = 50",
+      "4w = 40",
+      "w = 10 cm",
+      "length = 15 cm",
+      "Area = 10 × 15 = 150 square cm"
+    ],
+    "expected_features": ["numerical_operations", "step_markers", "problem_decomposition", "intermediate_conclusions", "logical_connectives"],
+    "difficulty": "hard"
+  }
+]

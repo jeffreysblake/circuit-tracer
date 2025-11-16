@@ -1,0 +1,48 @@
+[
+  {
+    "prompt": "What's the weather like in Paris today? Use the get_weather function.",
+    "expected_tool": "get_weather",
+    "expected_parameters": {
+      "location": "Paris",
+      "timeframe": "today"
+    },
+    "difficulty": "easy"
+  },
+  {
+    "prompt": "I need to check the weather in New York tomorrow. Can you help?",
+    "expected_tool": "get_weather",
+    "expected_parameters": {
+      "location": "New York",
+      "timeframe": "tomorrow"
+    },
+    "difficulty": "easy"
+  },
+  {
+    "prompt": "Show me the forecast for London this week using the weather API.",
+    "expected_tool": "get_weather",
+    "expected_parameters": {
+      "location": "London",
+      "timeframe": "this week"
+    },
+    "difficulty": "easy"
+  },
+  {
+    "prompt": "What will the temperature be in Tokyo next Monday?",
+    "expected_tool": "get_weather",
+    "expected_parameters": {
+      "location": "Tokyo",
+      "timeframe": "next Monday"
+    },
+    "difficulty": "medium"
+  },
+  {
+    "prompt": "Call the weather service to find out if it's going to rain in Seattle this weekend.",
+    "expected_tool": "get_weather",
+    "expected_parameters": {
+      "location": "Seattle",
+      "timeframe": "this weekend",
+      "condition": "rain"
+    },
+    "difficulty": "medium"
+  }
+]

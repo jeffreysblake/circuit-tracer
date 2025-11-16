@@ -1,0 +1,113 @@
+task_name: "reasoning"
+description: "Evaluating model circuits for multi-step reasoning and chain-of-thought"
+
+expected_features:
+  - type: "pattern"
+    name: "step_markers"
+    description: "Features for step-by-step reasoning markers (First, Second, Then, etc.)"
+    matcher:
+      activation_threshold: 0.5
+
+  - type: "pattern"
+    name: "logical_connectives"
+    description: "Features for logical connections (therefore, because, implies)"
+    matcher:
+      activation_threshold: 0.4
+
+  - type: "semantic"
+    name: "intermediate_conclusions"
+    description: "Features representing intermediate reasoning steps"
+    matcher:
+      activation_threshold: 0.6
+
+  - type: "pattern"
+    name: "numerical_operations"
+    description: "Features for numerical reasoning and calculations"
+    matcher:
+      activation_threshold: 0.5
+
+  - type: "semantic"
+    name: "problem_decomposition"
+    description: "Features that break complex problems into subproblems"
+    matcher:
+      activation_threshold: 0.6
+
+  - type: "pattern"
+    name: "conclusion_markers"
+    description: "Features for final answer indicators (Therefore, In conclusion, etc.)"
+    matcher:
+      activation_threshold: 0.4
+
+evaluation_metrics:
+  coverage:
+    weight: 0.25
+    description: "Percentage of reasoning feature patterns found"
+    enabled: true
+
+  coherence:
+    weight: 0.40
+    description: "How well reasoning steps connect causally (critical for reasoning)"
+    enabled: true
+
+  sparsity:
+    weight: 0.15
+    description: "Focused reasoning pathways vs diffuse computation"
+    enabled: true
+
+  density:
+    weight: 0.20
+    description: "Circuit complexity - reasoning may require denser graphs"
+    enabled: true
+
+  stability:
+    weight: 0.0
+    description: "Robustness when reasoning features are perturbed (disabled by default)"
+    enabled: false
+
+intervention_tests:
+  - name: "ablate_step_markers"
+    description: "Remove step-by-step reasoning markers"
+    expected_change: "high"
+    intervention_type: "ablate"
+
+  - name: "ablate_logical_connectives"
+    description: "Remove logical connection features"
+    expected_change: "high"
+    intervention_type: "ablate"
+
+  - name: "amplify_intermediate_conclusions"
+    description: "Boost intermediate reasoning step features"
+    expected_change: "medium"
+    intervention_type: "amplify"
+
+  - name: "swap_numerical_operations"
+    description: "Test robustness of numerical reasoning features"
+    expected_change: "medium"
+    intervention_type: "swap"
+
+datasets:
+  - name: "math_word_problems"
+    path: "datasets/reasoning/math_word_problems.json"
+    size: 100
+    description: "Grade-school math word problems requiring multi-step reasoning"
+
+  - name: "logical_puzzles"
+    path: "datasets/reasoning/logical_puzzles.json"
+    size: 80
+    description: "Logic puzzles requiring deductive reasoning"
+
+  - name: "causal_reasoning"
+    path: "datasets/reasoning/causal_reasoning.json"
+    size: 90
+    description: "Questions about cause-and-effect relationships"
+
+  - name: "chain_of_thought"
+    path: "datasets/reasoning/chain_of_thought.json"
+    size: 120
+    description: "Problems explicitly requiring chain-of-thought reasoning"
+
+metadata:
+  version: "1.0"
+  created_by: "circuit-tracer evaluation framework"
+  task_category: "reasoning"
+  difficulty: "hard"

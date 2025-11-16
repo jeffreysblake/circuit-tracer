@@ -1,0 +1,37 @@
+[
+  {
+    "prompt": "According to the document, what year was the company founded?",
+    "context": "TechCorp was founded in 1995 by Jane Smith and John Doe in a small garage in Silicon Valley. The company initially focused on developing productivity software for small businesses.",
+    "expected_answer": "1995",
+    "expected_features": ["context_reference", "information_extraction", "attribution_phrases"],
+    "difficulty": "easy"
+  },
+  {
+    "prompt": "Based on the text, who were the founders of the company?",
+    "context": "TechCorp was founded in 1995 by Jane Smith and John Doe in a small garage in Silicon Valley. The company initially focused on developing productivity software for small businesses.",
+    "expected_answer": "Jane Smith and John Doe",
+    "expected_features": ["context_reference", "information_extraction"],
+    "difficulty": "easy"
+  },
+  {
+    "prompt": "What does the document say about the company's initial focus?",
+    "context": "TechCorp was founded in 1995 by Jane Smith and John Doe in a small garage in Silicon Valley. The company initially focused on developing productivity software for small businesses.",
+    "expected_answer": "developing productivity software for small businesses",
+    "expected_features": ["context_reference", "information_extraction", "attribution_phrases"],
+    "difficulty": "easy"
+  },
+  {
+    "prompt": "According to the passage, what is the main benefit of the new technology?",
+    "context": "The new quantum computing technology promises to revolutionize data processing. According to recent studies, it can solve certain problems up to 1000 times faster than traditional computers, particularly in cryptography and molecular simulation.",
+    "expected_answer": "solving certain problems up to 1000 times faster",
+    "expected_features": ["context_reference", "information_extraction", "attribution_phrases"],
+    "difficulty": "medium"
+  },
+  {
+    "prompt": "What applications are mentioned in the document?",
+    "context": "The new quantum computing technology promises to revolutionize data processing. According to recent studies, it can solve certain problems up to 1000 times faster than traditional computers, particularly in cryptography and molecular simulation.",
+    "expected_answer": "cryptography and molecular simulation",
+    "expected_features": ["context_reference", "information_extraction"],
+    "difficulty": "medium"
+  }
+]

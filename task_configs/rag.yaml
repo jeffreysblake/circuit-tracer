@@ -1,0 +1,97 @@
+task_name: "rag"
+description: "Evaluating model circuits for Retrieval-Augmented Generation (RAG) tasks"
+
+expected_features:
+  - type: "pattern"
+    name: "context_reference"
+    description: "Features that activate when referencing provided context/documents"
+    matcher:
+      activation_threshold: 0.5
+
+  - type: "pattern"
+    name: "information_extraction"
+    description: "Features that extract relevant information from context"
+    matcher:
+      activation_threshold: 0.6
+
+  - type: "pattern"
+    name: "attribution_phrases"
+    description: "Features for phrases like 'according to', 'the document states'"
+    matcher:
+      activation_threshold: 0.4
+
+  - type: "semantic"
+    name: "context_vs_parametric"
+    description: "Features distinguishing context-based vs parametric knowledge"
+    matcher:
+      activation_threshold: 0.5
+
+  - type: "pattern"
+    name: "quote_extraction"
+    description: "Features for extracting and formatting quotes from context"
+    matcher:
+      activation_threshold: 0.3
+
+evaluation_metrics:
+  coverage:
+    weight: 0.35
+    description: "Percentage of expected RAG feature patterns found"
+    enabled: true
+
+  coherence:
+    weight: 0.35
+    description: "How well context processing pathways connect"
+    enabled: true
+
+  sparsity:
+    weight: 0.15
+    description: "Focused context usage vs diffuse attention"
+    enabled: true
+
+  density:
+    weight: 0.15
+    description: "Circuit complexity for context integration"
+    enabled: true
+
+  stability:
+    weight: 0.0
+    description: "Robustness when context features are modified (disabled by default)"
+    enabled: false
+
+intervention_tests:
+  - name: "ablate_context_reference"
+    description: "Remove context reference features to test dependence"
+    expected_change: "high"
+    intervention_type: "ablate"
+
+  - name: "ablate_attribution"
+    description: "Remove attribution phrase features"
+    expected_change: "medium"
+    intervention_type: "ablate"
+
+  - name: "amplify_quote_extraction"
+    description: "Boost quote extraction features"
+    expected_change: "medium"
+    intervention_type: "amplify"
+
+datasets:
+  - name: "factual_qa_short"
+    path: "datasets/rag/factual_qa_short.json"
+    size: 100
+    description: "Short context, simple factual questions"
+
+  - name: "multi_doc_reasoning"
+    path: "datasets/rag/multi_doc.json"
+    size: 75
+    description: "Questions requiring reasoning across multiple documents"
+
+  - name: "citation_accuracy"
+    path: "datasets/rag/citations.json"
+    size: 60
+    description: "Tasks requiring accurate citation and attribution"
+
+metadata:
+  version: "1.0"
+  created_by: "circuit-tracer evaluation framework"
+  task_category: "rag"
+  difficulty: "medium-hard"

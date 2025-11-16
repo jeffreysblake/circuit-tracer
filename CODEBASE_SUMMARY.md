@@ -752,3 +752,350 @@ Circuit-tracer is a powerful tool for understanding LLM reasoning, but it requir
 The library is well-architected and extensible. Your proposed use case - evaluating model fitness for specific tasks through circuit analysis - is novel and potentially very valuable for model selection and debugging. The main investment is in training transcoders and building evaluation infrastructure around the core attribution engine.
 
 Start with supported models (Gemma-2-2B is fast and accessible), prototype your evaluation metrics, then expand to custom models as you build out the transcoder training pipeline.
+
+---
+
+# Phase 1 Implementation: Evaluation Framework
+
+**Status**: ✅ Complete
+
+Phase 1 has been implemented and includes:
+- Task configuration system (YAML-based)
+- Evaluation metrics framework
+- Task evaluator with batch processing
+- CLI integration
+- Example task configs (tool_use, rag, reasoning)
+- Example datasets
+- Transcoder training wrapper
+
+## Quick Start Guide
+
+### 1. Basic Evaluation Example
+
+Evaluate Gemma-2-2B on the tool use task:
+
+```bash
+circuit-tracer evaluate \
+  --transcoder_set gemma \
+  --task_config task_configs/tool_use.yaml \
+  --dataset datasets/tool_use/weather.json \
+  --output_dir ./evaluation_results \
+  --verbose
+```
+
+This will:
+1. Load the Gemma-2-2B model with GemmaScope transcoders
+2. Load the tool_use task configuration
+3. Run attribution on each prompt in the weather dataset
+4. Compute metrics (coverage, coherence, sparsity, density)
+5. Save results to `./evaluation_results/results_tool_use.json`
+
+### 2. Evaluate with Command-Line Prompts
+
+```bash
+circuit-tracer evaluate \
+  --transcoder_set gemma \
+  --task_config task_configs/rag.yaml \
+  --prompts \
+    "According to the document, what is the main benefit?" \
+    "Based on the text, who founded the company?" \
+  --output_dir ./eval_results \
+  --verbose
+```
+
+### 3. Available Task Configurations
+
+**Tool Use** (`task_configs/tool_use.yaml`):
+- Expected features: function name extraction, parameter binding, JSON formatting
+- Metrics: coverage (30%), coherence (30%), sparsity (20%), density (20%)
+- Example datasets: weather calls, multi-tool scenarios
+
+**RAG** (`task_configs/rag.yaml`):
+- Expected features: context reference, information extraction, attribution phrases
+- Metrics: coverage (35%), coherence (35%), sparsity (15%), density (15%)
+- Example datasets: factual QA, multi-doc reasoning
+
+**Reasoning** (`task_configs/reasoning.yaml`):
+- Expected features: step markers, logical connectives, intermediate conclusions
+- Metrics: coverage (25%), coherence (40%), sparsity (15%), density (20%)
+- Example datasets: math word problems, logical puzzles
+
+### 4. Understanding the Output
+
+Results are saved as JSON with this structure:
+
+```json
+{
+  "task_name": "tool_use",
+  "model_name": "google/gemma-2-2b",
+  "n_prompts": 5,
+  "aggregate_metrics": {
+    "coverage_mean": 0.72,
+    "coverage_min": 0.65,
+    "coverage_max": 0.85,
+    "coherence_mean": 0.68,
+    "sparsity_mean": 0.91,
+    "density_mean": 0.09,
+    "weighted_score_mean": 0.70,
+    "total_prompts": 5,
+    "avg_active_features": 234.5
+  },
+  "individual_results": [
+    {
+      "prompt": "What's the weather like in Paris...",
+      "metrics": {
+        "coverage": 0.75,
+        "coherence": 0.68,
+        "sparsity": 0.92,
+        "density": 0.08,
+        "weighted_score": 0.71
+      },
+      "n_active_features": 245,
+      "interpretation": "Strong alignment with task requirements. 245 features active. Pathways show moderate coherence."
+    }
+  ]
+}
+```
+
+### 5. Creating Custom Task Configurations
+
+Create a new YAML file in `task_configs/`:
+
+```yaml
+task_name: "my_custom_task"
+description: "Evaluating model circuits for my specific use case"
+
+expected_features:
+  - type: "pattern"
+    name: "my_feature"
+    description: "What this feature should do"
+    matcher:
+      activation_threshold: 0.5
+
+evaluation_metrics:
+  coverage:
+    weight: 0.4
+    description: "How well expected features are present"
+    enabled: true
+
+  coherence:
+    weight: 0.6
+    description: "How interpretable the pathways are"
+    enabled: true
+
+datasets:
+  - name: "my_test_set"
+    path: "datasets/my_task/test.json"
+    size: 100
+```
+
+### 6. Creating Custom Datasets
+
+Datasets are JSON files with this format:
+
+```json
+[
+  {
+    "prompt": "Your test prompt here",
+    "expected_answer": "optional answer",
+    "expected_features": ["feature1", "feature2"],
+    "difficulty": "easy"
+  },
+  {
+    "prompt": "Another test prompt",
+    "expected_answer": "another answer",
+    "difficulty": "hard"
+  }
+]
+```
+
+The only required field is `"prompt"`. Other fields are metadata for analysis.
+
+### 7. Training Transcoders for New Models
+
+To use circuit-tracer with a model that doesn't have pre-trained transcoders:
+
+**Option A: Using the Python API**
+
+```python
+from circuit_tracer.training import TranscoderTrainer, TranscoderTrainingConfig
+
+config = TranscoderTrainingConfig(
+    model_name="mistralai/Mistral-7B-v0.1",
+    dataset="c4",
+    d_transcoder=65536,  # 16x expansion
+    n_tokens=100_000_000,
+    output_dir="./my_transcoders",
+    use_transcoders=True,  # True for transcoders, False for SAEs
+)
+
+trainer = TranscoderTrainer(config)
+output_dir = trainer.train(method="sparsify", verbose=True)
+
+# Export for circuit-tracer
+from circuit_tracer.training import export_for_circuit_tracer
+
+export_for_circuit_tracer(
+    transcoder_dir=output_dir,
+    model_name="mistralai/Mistral-7B-v0.1",
+    output_dir="./mistral_transcoders_ct_format",
+)
+```
+
+**Option B: Using EleutherAI Sparsify directly**
+
+```bash
+# Install sparsify
+pip install eleutherai-sparsify
+
+# Train transcoders
+python -m sparsify mistralai/Mistral-7B-v0.1 c4 \
+  --transcode \
+  --d_hidden 65536 \
+  --n_tokens 100000000 \
+  --save_dir ./my_transcoders
+
+# Then export to circuit-tracer format
+python -c "
+from circuit_tracer.training import export_for_circuit_tracer
+export_for_circuit_tracer(
+    './my_transcoders',
+    'mistralai/Mistral-7B-v0.1',
+    './mistral_ct_format'
+)
+"
+```
+
+**Then use your custom transcoders:**
+
+```bash
+circuit-tracer evaluate \
+  --model mistralai/Mistral-7B-v0.1 \
+  --transcoder_set ./mistral_ct_format \
+  --task_config task_configs/tool_use.yaml \
+  --dataset datasets/tool_use/weather.json \
+  --output_dir ./results
+```
+
+### 8. Programmatic Usage (Python API)
+
+```python
+from circuit_tracer import ReplacementModel
+from circuit_tracer.evaluation import TaskEvaluator, load_task_config
+from circuit_tracer.utils.hf_utils import load_transcoder_from_hub
+import torch
+
+# Load model and transcoders
+transcoder, config = load_transcoder_from_hub("gemma", dtype=torch.float32)
+model = ReplacementModel.from_pretrained_and_transcoders(
+    "google/gemma-2-2b",
+    transcoder,
+    dtype=torch.float32
+)
+
+# Load task configuration
+task_config = load_task_config("task_configs/tool_use.yaml")
+
+# Create evaluator
+evaluator = TaskEvaluator(
+    model=model,
+    task_config=task_config,
+    attribution_kwargs={
+        "max_n_logits": 10,
+        "batch_size": 256,
+    }
+)
+
+# Evaluate single prompt
+result = evaluator.evaluate_prompt(
+    "What's the weather in Paris? Use get_weather function."
+)
+
+print(f"Metrics: {result.metrics}")
+print(f"Interpretation: {result.interpretation}")
+print(f"Active features: {len(result.graph.active_features)}")
+
+# Evaluate batch
+prompts = [
+    "Weather in Tokyo?",
+    "Show me forecast for London",
+    "Temperature in NYC tomorrow?"
+]
+
+batch_results = evaluator.evaluate_batch(prompts, verbose=True)
+print(f"Aggregate metrics: {batch_results.aggregate_metrics}")
+
+# Save results
+import json
+with open("results.json", "w") as f:
+    json.dump(batch_results.summary(), f, indent=2)
+```
+
+### 9. Customizing Evaluation Metrics
+
+You can create custom metrics by extending the metrics module:
+
+```python
+# In your own code
+from circuit_tracer.graph import Graph
+from circuit_tracer.evaluation.task_evaluator import TaskEvaluator
+
+def my_custom_metric(graph: Graph) -> float:
+    """Compute a custom metric based on graph properties."""
+    # Example: measure average feature activation strength
+    activations = graph.activation_values
+    return float(activations.mean())
+
+# Then use it with TaskEvaluator
+class CustomTaskEvaluator(TaskEvaluator):
+    def _compute_metrics(self, graph: Graph):
+        metrics = super()._compute_metrics(graph)
+        metrics["custom_metric"] = my_custom_metric(graph)
+        return metrics
+```
+
+### 10. Comparing Multiple Models
+
+```bash
+# Evaluate Gemma-2-2B
+circuit-tracer evaluate \
+  --transcoder_set gemma \
+  --task_config task_configs/reasoning.yaml \
+  --dataset datasets/reasoning/math_word_problems.json \
+  --output_dir ./results/gemma \
+  --verbose
+
+# Evaluate Llama-3.2-1B
+circuit-tracer evaluate \
+  --transcoder_set llama \
+  --model meta-llama/Llama-3.2-1B \
+  --task_config task_configs/reasoning.yaml \
+  --dataset datasets/reasoning/math_word_problems.json \
+  --output_dir ./results/llama \
+  --verbose
+
+# Compare results
+python -c "
+import json
+
+with open('./results/gemma/results_reasoning.json') as f:
+    gemma = json.load(f)
+with open('./results/llama/results_reasoning.json') as f:
+    llama = json.load(f)
+
+print('Gemma-2-2B weighted_score:', gemma['aggregate_metrics']['weighted_score_mean'])
+print('Llama-3.2-1B weighted_score:', llama['aggregate_metrics']['weighted_score_mean'])
+"
+```
+
+## Next Steps for Phase 2
+
+With Phase 1 complete, you can now:
+
+1. **Test the evaluation framework** on supported models (Gemma, Llama, Qwen)
+2. **Create task configs** for your specific use cases
+3. **Build datasets** for tool use, RAG, or other tasks you want to evaluate
+4. **Train transcoders** for custom models using the training wrapper
+5. **Begin Phase 2**: Build the web UI for easier model/dataset management
+
+The evaluation infrastructure is fully functional and ready to use!

@@ -1,0 +1,91 @@
+task_name: "tool_use"
+description: "Evaluating model circuits for tool/function calling behavior"
+
+expected_features:
+  - type: "pattern"
+    name: "function_name_extraction"
+    description: "Features that activate on function or tool names in the prompt"
+    matcher:
+      activation_threshold: 0.5
+
+  - type: "pattern"
+    name: "parameter_binding"
+    description: "Features that link arguments to function parameters"
+    matcher:
+      activation_threshold: 0.3
+
+  - type: "pattern"
+    name: "JSON_formatting"
+    description: "Features ensuring valid JSON structure in tool calls"
+    matcher:
+      activation_threshold: 0.4
+
+  - type: "semantic"
+    name: "tool_invocation_intent"
+    description: "Features representing the intention to call a tool/function"
+    matcher:
+      activation_threshold: 0.6
+
+evaluation_metrics:
+  coverage:
+    weight: 0.3
+    description: "Percentage of expected feature patterns found in the circuit"
+    enabled: true
+
+  coherence:
+    weight: 0.3
+    description: "How well features connect in interpretable pathways"
+    enabled: true
+
+  sparsity:
+    weight: 0.2
+    description: "Whether the model uses focused features vs diffuse activations"
+    enabled: true
+
+  density:
+    weight: 0.2
+    description: "Graph connectivity - helps identify overly complex circuits"
+    enabled: true
+
+  stability:
+    weight: 0.0
+    description: "Robustness to feature interventions (expensive, disabled by default)"
+    enabled: false
+
+intervention_tests:
+  - name: "ablate_function_name"
+    description: "Zero out features related to function name extraction"
+    expected_change: "high"
+    intervention_type: "ablate"
+
+  - name: "swap_parameters"
+    description: "Modify parameter binding features to test robustness"
+    expected_change: "medium"
+    intervention_type: "swap"
+
+  - name: "amplify_json_format"
+    description: "Increase JSON formatting feature activations"
+    expected_change: "low"
+    intervention_type: "amplify"
+
+datasets:
+  - name: "simple_weather_calls"
+    path: "datasets/tool_use/weather.json"
+    size: 50
+    description: "Simple single-tool calls for weather information"
+
+  - name: "complex_multi_tool"
+    path: "datasets/tool_use/multi_tool.json"
+    size: 100
+    description: "Complex scenarios requiring multiple tool calls"
+
+  - name: "tool_selection"
+    path: "datasets/tool_use/tool_selection.json"
+    size: 75
+    description: "Scenarios where model must choose between multiple available tools"
+
+metadata:
+  version: "1.0"
+  created_by: "circuit-tracer evaluation framework"
+  task_category: "tool_use"
+  difficulty: "medium"

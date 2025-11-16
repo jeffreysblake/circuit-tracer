@@ -140,11 +140,79 @@ def main():
     )
     server_parser.add_argument("--port", type=int, default=8041, help="Port for the local server.")
 
+    # Evaluate subcommand
+    eval_parser = subparsers.add_parser(
+        "evaluate", help="Batch evaluate model on task-specific datasets"
+    )
+    eval_parser.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        help="Model architecture to use for evaluation. Can be inferred from transcoder config.",
+    )
+    eval_parser.add_argument(
+        "-t",
+        "--transcoder_set",
+        required=True,
+        help="HuggingFace repository ID containing transcoders",
+    )
+    eval_parser.add_argument(
+        "--task_config",
+        required=True,
+        help="Path to task configuration YAML file (e.g., task_configs/tool_use.yaml)",
+    )
+    eval_parser.add_argument(
+        "--dataset",
+        help="Path to dataset JSON file. If not provided, uses datasets from task config.",
+    )
+    eval_parser.add_argument(
+        "--prompts",
+        nargs="+",
+        help="List of prompts to evaluate (alternative to --dataset)",
+    )
+    eval_parser.add_argument(
+        "-o",
+        "--output_dir",
+        required=True,
+        help="Directory to save evaluation results",
+    )
+    eval_parser.add_argument(
+        "--dtype",
+        type=str,
+        choices=["float32", "bfloat16", "float16", "fp32", "bf16", "fp16"],
+        default="float32",
+        help="Data type for model weights",
+    )
+    eval_parser.add_argument(
+        "--max_n_logits", type=int, default=10, help="Maximum number of logit nodes"
+    )
+    eval_parser.add_argument(
+        "--batch_size", type=int, default=256, help="Batch size for attribution"
+    )
+    eval_parser.add_argument(
+        "--offload",
+        choices=["cpu", "disk", None],
+        default=None,
+        help="Offload model parameters to save memory",
+    )
+    eval_parser.add_argument(
+        "--save_graphs",
+        action="store_true",
+        help="Save full attribution graphs (uses more memory)",
+    )
+    eval_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Display progress information",
+    )
+
     args = parser.parse_args()
 
     if args.command == "attribute":
         run_attribution(args, attr_parser)
-    if args.command == "start-server" or args.server:
+    elif args.command == "evaluate":
+        run_evaluation(args, eval_parser)
+    elif args.command == "start-server" or args.server:
         run_server(args)
 
 
@@ -250,6 +318,122 @@ def run_attribution(args, parser):
             edge_threshold=args.edge_threshold,
         )
         logging.info(f"Graph JSON files written to {args.graph_file_dir}")
+
+
+def run_evaluation(args, parser):
+    """Run batch evaluation on a task dataset."""
+    import json
+    from pathlib import Path
+
+    import torch
+
+    from circuit_tracer import ReplacementModel
+    from circuit_tracer.evaluation import TaskEvaluator, load_task_config
+    from circuit_tracer.utils.hf_utils import load_transcoder_from_hub
+
+    # Load task configuration
+    logging.info(f"Loading task configuration from {args.task_config}")
+    task_config = load_task_config(args.task_config)
+
+    # Prepare output directory
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Convert dtype
+    dtype = args.dtype
+    dtype_mapping = {
+        "fp32": "float32",
+        "bf16": "bfloat16",
+        "fp16": "float16",
+    }
+    if dtype in dtype_mapping:
+        dtype = dtype_mapping[dtype]
+    dtype = getattr(torch, dtype)
+
+    # Load model and transcoders
+    logging.info(f"Loading transcoders from {args.transcoder_set}")
+    transcoder, config = load_transcoder_from_hub(
+        args.transcoder_set,
+        dtype=dtype,
+    )
+
+    args.model = args.model or config.get("model_name", None)
+    if not args.model:
+        parser.error("--model must be specified when not provided in transcoder config")
+
+    logging.info(f"Loading model {args.model}")
+    model = ReplacementModel.from_pretrained_and_transcoders(
+        args.model, transcoder, dtype=dtype
+    )
+
+    # Create evaluator
+    attribution_kwargs = {
+        "max_n_logits": args.max_n_logits,
+        "batch_size": args.batch_size,
+        "offload": args.offload,
+    }
+    evaluator = TaskEvaluator(
+        model=model,
+        task_config=task_config,
+        attribution_kwargs=attribution_kwargs,
+    )
+
+    # Get prompts to evaluate
+    prompts = []
+    if args.prompts:
+        prompts = args.prompts
+        logging.info(f"Evaluating {len(prompts)} prompts from command line")
+    elif args.dataset:
+        # Load from JSON file
+        with open(args.dataset) as f:
+            dataset = json.load(f)
+        prompts = [item["prompt"] for item in dataset]
+        logging.info(f"Loaded {len(prompts)} prompts from {args.dataset}")
+    elif task_config.datasets:
+        # Use first dataset from task config
+        dataset_info = task_config.datasets[0]
+        dataset_path = Path(dataset_info.path)
+        if not dataset_path.exists():
+            # Try relative to task_configs directory
+            dataset_path = Path(args.task_config).parent.parent / dataset_info.path
+        if dataset_path.exists():
+            with open(dataset_path) as f:
+                dataset = json.load(f)
+            prompts = [item["prompt"] for item in dataset]
+            logging.info(f"Loaded {len(prompts)} prompts from {dataset_path}")
+        else:
+            parser.error(
+                f"Dataset file not found: {dataset_info.path}. "
+                "Please provide --dataset or --prompts"
+            )
+    else:
+        parser.error("No prompts provided. Use --prompts or --dataset or configure datasets in task config")
+
+    # Run evaluation
+    logging.info(f"Starting evaluation on {len(prompts)} prompts...")
+    results = evaluator.evaluate_batch(
+        prompts=prompts,
+        verbose=args.verbose,
+        save_graphs=args.save_graphs,
+    )
+
+    # Save results
+    results_file = output_dir / f"results_{task_config.task_name}.json"
+    with open(results_file, "w") as f:
+        json.dump(results.summary(), f, indent=2)
+
+    logging.info(f"Results saved to {results_file}")
+
+    # Print summary
+    logging.info("\n" + "=" * 60)
+    logging.info(f"EVALUATION SUMMARY: {task_config.task_name}")
+    logging.info("=" * 60)
+    logging.info(f"Model: {args.model}")
+    logging.info(f"Prompts evaluated: {len(prompts)}")
+    logging.info(f"\nAggregate Metrics:")
+    for metric_name, value in results.aggregate_metrics.items():
+        logging.info(f"  {metric_name}: {value:.4f}")
+    logging.info("=" * 60)
 
 
 def run_server(args):
